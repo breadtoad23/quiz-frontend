@@ -4,74 +4,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Тест АСМО-СМК (рандом 10 из банка)</title>
+  <title>Экзамен — тест</title>
   <style>
     :root { color-scheme: light; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 920px; margin: 28px auto; padding: 0 16px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 920px; margin: 24px auto; padding: 0 16px; }
     h1 { margin: 0 0 6px; }
     .muted { color: #666; margin: 0 0 18px; }
     .card { border: 1px solid #e6e6e6; border-radius: 14px; padding: 16px; margin: 12px 0; background: #fff; }
     .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
     label { cursor: pointer; }
-    input[type="text"] { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; width: 280px; max-width: 100%; }
+    input[type="text"] { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; width: 320px; max-width: 100%; }
     .q-title { margin: 0 0 10px; font-weight: 700; }
     .opt { display: block; padding: 10px 12px; border: 1px solid #eee; border-radius: 12px; margin: 8px 0; }
     .opt:hover { border-color: #d5d5d5; }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    button { padding: 10px 14px; border-radius: 12px; border: 1px solid #ddd; background: #f7f7f7; cursor: pointer; font-weight: 600; }
+    .actions { position: sticky; bottom: 0; background: rgba(255,255,255,0.92); backdrop-filter: blur(6px); border-top: 1px solid #eee; padding: 12px 0; margin-top: 18px; }
+    .actions-inner { max-width: 920px; margin: 0 auto; padding: 0 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    button { padding: 11px 16px; border-radius: 12px; border: 1px solid #ddd; background: #f7f7f7; cursor: pointer; font-weight: 700; }
     button.primary { background: #111; color: #fff; border-color: #111; }
     button:disabled { opacity: .55; cursor: not-allowed; }
-    .pill { display: inline-flex; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid #e6e6e6; border-radius: 999px; background: #fafafa; font-size: 14px; }
-    .status { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: #222; }
-    .good { color: #0a7a2f; }
+    .status { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; margin-top: 10px; }
     .bad { color: #b00020; }
+    .good { color: #0a7a2f; }
+    .counter { color:#444; font-size: 14px; }
+    .warn { color:#b00020; font-weight: 700; }
   </style>
 </head>
 <body>
-  <h1>Тест АСМО-СМК</h1>
-  <p class="muted">При каждом открытии формируется случайный набор из 10 вопросов (без повторов). Результат отправляется в базу через API.</p>
+
+  <h1>Экзаменационный тест</h1>
+  <p class="muted">
+    Вопросы выбираются случайно при открытии. Все вопросы обязательны. Отправка — один раз.
+  </p>
 
   <div class="card">
     <div class="row">
-      <div class="pill">🌐 API: <span id="apiLabel"></span></div>
-      <div class="pill">🎲 Набор: <span id="setLabel">—</span></div>
+      <label for="name"><strong>ФИО / Ник:</strong></label>
+      <input id="name" type="text" placeholder="Например, Иванов И.И." autocomplete="name" />
+      <span class="counter" id="progress">Ответов: 0/10</span>
     </div>
-    <div style="height: 12px;"></div>
-    <div class="row">
-      <label>Имя / ник:</label>
-      <input id="name" type="text" placeholder="Например, Маша" autocomplete="name" />
-      <button id="regen" title="Сгенерировать новый набор вопросов">Перегенерировать 10 вопросов</button>
-    </div>
-    <div class="actions">
-      <button class="primary" id="submitBtn">Отправить результат</button>
-      <button id="copyLink">Скопировать ссылку на этот набор</button>
-      <button id="openResults">Открыть /results</button>
-    </div>
-    <div style="height: 10px;"></div>
-    <div id="status" class="status"></div>
+    <div class="status" id="status"></div>
   </div>
 
   <div id="quiz"></div>
+
+  <div class="actions">
+    <div class="actions-inner">
+      <div class="counter" id="bottomHint">Ответов: 0/10</div>
+      <button class="primary" id="submitBtn">Отправить</button>
+    </div>
+  </div>
 
 <script>
 /** =========================
  *  НАСТРОЙКИ
  *  ========================= */
 const API_URL = "https://quiz-api-krqu.onrender.com"; // <-- твой API
-
-// Сколько вопросов показывать
 const PICK_COUNT = 10;
 
-// Если true — набор фиксируется по seed из URL (?seed=...)
-// Если false — каждый раз новый случайный (кнопка перегенерации делает новый seed)
-const USE_SEED = true;
+// Ключ блокировки "один раз"
+// (на одном устройстве/в одном браузере; для “железно один раз” нужна серверная проверка)
+const SUBMIT_LOCK_KEY = "exam_submitted_v1";
 
 /** =========================
- *  БАНК ВОПРОСОВ (из документа)
+ *  БАНК ВОПРОСОВ (можешь расширять)
  *  correctIndex: 0=A, 1=B, 2=C, 3=D
  *  ========================= */
 const questionBank = [
-  // БЛОК 1
   { id: 1, text: "Какова ключевая идея АСМО-СМК как системы?", options: [
     "Автоматизация документооборота",
     "Контроль выполнения регламентов",
@@ -149,7 +147,6 @@ const questionBank = [
     "Она предназначена только для управления рисками"
   ], correctIndex: 2 },
 
-  // БЛОК 2
   { id: 12, text: "Что является результатом корректно выстроенной цепочки: цели → KPI → риски → аудиты → улучшения?", options: [
     "Увеличение количества отчётов",
     "Формальное соответствие стандартам качества",
@@ -199,7 +196,6 @@ const questionBank = [
     "Замена управленческих решений системой"
   ], correctIndex: 2 },
 
-  // БЛОК 3
   { id: 19, text: "Какие решения отнесены к основным отечественным конкурентам АСМО-СМК?", options: [
     "SAP GRC, ARIS, Oracle Risk Management",
     "Directum, DocsVision, ELMA",
@@ -214,119 +210,39 @@ const questionBank = [
     "KPI-аналитика и стратегическое управление"
   ], correctIndex: 2 },
 
-  { id: 21, text: "В каком сценарии Business Studio будет менее подходящим решением по сравнению с АСМО-СМК?", options: [
-    "Когда требуется описание процессов и оргструктуры",
-    "Когда нужна разработка методологии СМК",
-    "Когда требуется механизм гибких согласований",
-    "Когда необходимо формализовать регламенты"
-  ], correctIndex: 2 },
-
-  { id: 22, text: "Какое ограничение решения Business Studio подчёркивается в портрете конкурента?", options: [
-    "Отсутствие поддержки стандартов СМК",
-    "Ограничения по числу пользователей",
-    "Недостаточная развитость визуальной аналитики и дашбордов",
-    "Отсутствие процессного моделирования"
-  ], correctIndex: 2 },
-
-  { id: 23, text: "В чём ключевая особенность решения 1С-КПД:СМК?", options: [
+  { id: 21, text: "В чём ключевая особенность решения 1С-КПД:СМК?", options: [
     "Полноценное управление операционными рисками",
     "Гибкая система расчёта KPI",
     "Фокус на документообороте и процессах СМК в экосистеме 1С",
     "Развитые интерактивные панели управления"
   ], correctIndex: 2 },
 
-  { id: 24, text: "Почему АСМО-СМК выигрывает у конкурентов в части управленческой аналитики?", options: [
+  { id: 22, text: "Почему АСМО-СМК выигрывает у конкурентов в части управленческой аналитики?", options: [
     "За счёт фиксированных методик расчётов",
     "За счёт упрощённой модели данных",
     "За счёт гибкой настройки расчёта KPI и учёта лучших практик",
     "За счёт меньшего числа модулей"
   ], correctIndex: 2 },
-
-  // БЛОК 4
-  { id: 25, text: "Почему стартовая стоимость внедрения АВАКОР для 15 пользователей является высокой?", options: [
-    "Из-за дорогой техподдержки",
-    "Из-за обязательной подписки на дополнительные приложения",
-    "Из-за необходимости покупки нескольких серверных модулей и пользовательских лицензий",
-    "Из-за ограничений по числу пользователей"
-  ], correctIndex: 2 },
-
-  { id: 26, text: "Какой принцип лежит в основе расчёта стоимости АСМО-СМК для 15 пользователей?", options: [
-    "Фиксированная цена за пакет",
-    "Цена за сервер + неограниченные пользователи",
-    "Цена одной лицензии зависит от диапазона количества пользователей",
-    "Почасовая оплата"
-  ], correctIndex: 2 },
-
-  { id: 27, text: "В чём особенность модели лицензирования Business Studio?", options: [
-    "Только серверные лицензии",
-    "Только подписка",
-    "Наличие как бессрочных, так и месячных персональных и конкурентных лицензий",
-    "Бесплатное тестирование без ограничений"
-  ], correctIndex: 2 },
-
-  { id: 28, text: "Какой риск для заказчика возникает при просрочке продления поддержки Business Studio?", options: [
-    "Потеря данных",
-    "Блокировка системы",
-    "Резкое увеличение стоимости поддержки до 75% от стоимости лицензий",
-    "Потеря лицензии"
-  ], correctIndex: 2 },
 ];
 
 /** =========================
- *  УТИЛИТЫ: seed, random без повторов
+ *  СЛУЧАЙНЫЙ ВЫБОР 10 (без повторов)
  *  ========================= */
-function xmur3(str) {
-  // tiny hash -> seed
-  let h = 1779033703 ^ str.length;
-  for (let i = 0; i < str.length; i++) {
-    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
+function pickRandomUnique(bank, count) {
+  const arr = [...bank];
+  // Fisher-Yates shuffle
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return function() {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return (h ^= h >>> 16) >>> 0;
-  };
-}
-function mulberry32(a) {
-  return function() {
-    let t = (a += 0x6D2B79F5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function pickUnique(bank, count, randFn) {
-  const idxs = [...bank.keys()];
-  // Fisher–Yates
-  for (let i = idxs.length - 1; i > 0; i--) {
-    const j = Math.floor(randFn() * (i + 1));
-    [idxs[i], idxs[j]] = [idxs[j], idxs[i]];
-  }
-  return idxs.slice(0, Math.min(count, idxs.length)).map(i => bank[i]);
+  return arr.slice(0, Math.min(count, arr.length));
 }
 
-function getSeedFromUrl() {
-  const u = new URL(location.href);
-  return u.searchParams.get("seed");
-}
-function setSeedToUrl(seed) {
-  const u = new URL(location.href);
-  u.searchParams.set("seed", seed);
-  history.replaceState(null, "", u.toString());
-}
-
-function makeSeed() {
-  // достаточно “случайно” + коротко
-  return Math.random().toString(16).slice(2) + Date.now().toString(16);
-}
+let selected = pickRandomUnique(questionBank, PICK_COUNT);
 
 /** =========================
- *  РЕНДЕР ТЕСТА
+ *  РЕНДЕР
  *  ========================= */
-let selected = [];
-let seed = null;
-
 function renderQuiz() {
   const quiz = document.getElementById("quiz");
   quiz.innerHTML = "";
@@ -354,49 +270,58 @@ function renderQuiz() {
 
     quiz.appendChild(card);
   });
-
-  document.getElementById("setLabel").textContent = `seed=${seed} • 10/${questionBank.length}`;
 }
 
-function regenerate() {
-  seed = USE_SEED ? (getSeedFromUrl() || makeSeed()) : makeSeed();
-  if (USE_SEED) setSeedToUrl(seed);
-
-  const hash = xmur3(seed)();
-  const rand = mulberry32(hash);
-  selected = pickUnique(questionBank, PICK_COUNT, rand);
-  renderQuiz();
-
-  setStatus(`Сгенерирован набор: seed=${seed}\n(Можно раздать ссылку — у всех откроется тот же набор, если в URL есть ?seed=...)`, "good");
+/** =========================
+ *  ПРОГРЕСС / ВАЛИДАЦИЯ
+ *  ========================= */
+function getAnsweredCount() {
+  let answered = 0;
+  for (const q of selected) {
+    const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
+    if (checked) answered++;
+  }
+  return answered;
 }
 
-function setStatus(text, kind) {
-  const el = document.getElementById("status");
-  el.textContent = text || "";
-  el.className = "status " + (kind || "");
+function updateProgress() {
+  const answered = getAnsweredCount();
+  const total = selected.length;
+  const text = `Ответов: ${answered}/${total}`;
+  document.getElementById("progress").textContent = text;
+  document.getElementById("bottomHint").textContent = text;
+
+  const btn = document.getElementById("submitBtn");
+  const locked = localStorage.getItem(SUBMIT_LOCK_KEY) === "1";
+  if (locked) {
+    btn.disabled = true;
+    document.getElementById("bottomHint").innerHTML = `Отправлено <span class="warn">1 раз</span>. Повторная отправка заблокирована.`;
+  } else {
+    btn.disabled = answered !== total;
+  }
 }
+
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.matches('input[type="radio"]')) {
+    updateProgress();
+  }
+});
 
 /** =========================
  *  СБОР ОТВЕТОВ / СЧЁТ
  *  ========================= */
-function collectAnswers() {
+function collectAnswersAll() {
   const answers = {};
-  let answered = 0;
-
   for (const q of selected) {
     const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    if (checked) {
-      answered++;
-      const chosenIndex = Number(checked.value);
-      answers[String(q.id)] = {
-        chosenIndex,
-        chosenText: q.options[chosenIndex],
-      };
-    } else {
-      answers[String(q.id)] = null;
-    }
+    if (!checked) return null; // обязательность
+    const chosenIndex = Number(checked.value);
+    answers[String(q.id)] = {
+      chosenIndex,
+      chosenText: q.options[chosenIndex],
+    };
   }
-  return { answers, answered };
+  return answers;
 }
 
 function computeScore(answersObj) {
@@ -409,39 +334,49 @@ function computeScore(answersObj) {
 }
 
 /** =========================
- *  ОТПРАВКА
+ *  ОТПРАВКА (один раз)
  *  ========================= */
+function setStatus(text, kind) {
+  const el = document.getElementById("status");
+  el.textContent = text || "";
+  el.className = "status " + (kind || "");
+}
+
 async function submit() {
-  const name = document.getElementById("name").value.trim();
-  if (!name) {
-    alert("Введите имя/ник.");
+  const locked = localStorage.getItem(SUBMIT_LOCK_KEY) === "1";
+  if (locked) {
+    setStatus("Уже отправлено. Повторная отправка заблокирована.", "bad");
     return;
   }
 
-  const { answers, answered } = collectAnswers();
-  if (answered < selected.length) {
-    const ok = confirm(`Ты ответила(а) только на ${answered} из ${selected.length}. Отправить всё равно?`);
-    if (!ok) return;
+  const name = document.getElementById("name").value.trim();
+  if (!name) {
+    setStatus("Введите ФИО/ник.", "bad");
+    return;
+  }
+
+  const answers = collectAnswersAll();
+  if (!answers) {
+    setStatus("Ответьте на все вопросы — только после этого можно отправить.", "bad");
+    updateProgress();
+    return;
   }
 
   const score = computeScore(answers);
-
-  // полезно хранить, какие вопросы выпали (для аналитики)
   const questionIds = selected.map(q => q.id);
 
   const payload = {
     name,
     score,
     answers: {
-      seed,
       questionIds,
-      answeredCount: answered,
-      answers,
+      answers
     }
   };
 
   setStatus("Отправка...", "");
-  document.getElementById("submitBtn").disabled = true;
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
 
   try {
     const res = await fetch(API_URL + "/submit", {
@@ -453,56 +388,38 @@ async function submit() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setStatus("Ошибка сервера:\n" + JSON.stringify(data, null, 2), "bad");
+      btn.disabled = false;
       return;
     }
 
-    setStatus(
-      `✅ Готово!\nБалл: ${score}/${selected.length}\nОтвет сервера:\n${JSON.stringify(data, null, 2)}`,
-      "good"
-    );
+    // ✅ блокируем повторную отправку
+    localStorage.setItem(SUBMIT_LOCK_KEY, "1");
+
+    setStatus(`✅ Отправлено!\nВаш результат: ${score}/${selected.length}`, "good");
+    updateProgress();
+
+    // Дополнительно: заблокируем изменение ответов после успешной отправки
+    document.querySelectorAll('input[type="radio"], input[type="text"]').forEach(el => el.disabled = true);
+
   } catch (e) {
-    setStatus("❌ Ошибка отправки (fetch):\n" + String(e), "bad");
-  } finally {
-    document.getElementById("submitBtn").disabled = false;
+    setStatus("Ошибка отправки:\n" + String(e), "bad");
+    btn.disabled = false;
   }
 }
 
-/** =========================
- *  КНОПКИ
- *  ========================= */
-document.getElementById("apiLabel").textContent = API_URL;
-
 document.getElementById("submitBtn").addEventListener("click", submit);
-
-document.getElementById("regen").addEventListener("click", () => {
-  seed = makeSeed();
-  if (USE_SEED) setSeedToUrl(seed);
-  const hash = xmur3(seed)();
-  const rand = mulberry32(hash);
-  selected = pickUnique(questionBank, PICK_COUNT, rand);
-  renderQuiz();
-  setStatus(`Сгенерирован новый набор: seed=${seed}`, "good");
-});
-
-document.getElementById("copyLink").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(location.href);
-    setStatus("Ссылка скопирована в буфер обмена ✅", "good");
-  } catch {
-    setStatus("Не удалось скопировать ссылку (браузер запретил). Скопируй вручную из адресной строки.", "bad");
-  }
-});
-
-document.getElementById("openResults").addEventListener("click", () => {
-  window.open(API_URL + "/results", "_blank", "noopener,noreferrer");
-});
 
 /** =========================
  *  START
  *  ========================= */
-seed = USE_SEED ? (getSeedFromUrl() || makeSeed()) : makeSeed();
-if (USE_SEED) setSeedToUrl(seed);
-regenerate();
+renderQuiz();
+updateProgress();
+
+// Если уже отправлено ранее — сразу блокируем
+if (localStorage.getItem(SUBMIT_LOCK_KEY) === "1") {
+  setStatus("Тест уже был отправлен с этого устройства/браузера. Повторная отправка заблокирована.", "bad");
+  document.querySelectorAll('input[type="radio"]').forEach(el => el.disabled = true);
+}
 </script>
 </body>
 </html>
