@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Тест (проверка)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; }
+    h1 { margin-bottom: 10px; }
+    .question { margin-bottom: 20px; }
+    button { padding: 10px 20px; font-size: 16px; }
+    .status { margin-top: 20px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+<h1>Мини-тест</h1>
+<p>Учебная проверка сохранения результатов</p>
+
+<div class="question">
+  <label>
+    Имя:
+    <input type="text" id="name" placeholder="Введите имя">
+  </label>
+</div>
+
+<div class="question">
+  <strong>1. 2 + 2 = ?</strong><br>
+  <label><input type="radio" name="q1" value="3"> 3</label><br>
+  <label><input type="radio" name="q1" value="4"> 4</label><br>
+  <label><input type="radio" name="q1" value="5"> 5</label>
+</div>
+
+<div class="question">
+  <strong>2. Столица России?</strong><br>
+  <label><input type="radio" name="q2" value="СПб"> Санкт-Петербург</label><br>
+  <label><input type="radio" name="q2" value="Москва"> Москва</label><br>
+  <label><input type="radio" name="q2" value="Казань"> Казань</label>
+</div>
+
+<button onclick="submitTest()">Отправить</button>
+
+<div class="status" id="status"></div>
+
+<script>
+const API_URL = "https://quiz-api-krqu.onrender.com";
+
+async function submitTest() {
+  const name = document.getElementById("name").value.trim();
+  const q1 = document.querySelector('input[name="q1"]:checked')?.value;
+  const q2 = document.querySelector('input[name="q2"]:checked')?.value;
+
+  if (!name || !q1 || !q2) {
+    alert("Ответь на все вопросы и введи имя");
+    return;
+  }
+
+  // считаем балл
+  let score = 0;
+  if (q1 === "4") score++;
+  if (q2 === "Москва") score++;
+
+  const payload = {
+    name: name,
+    score: score,
+    answers: {
+      q1: q1,
+      q2: q2
+    }
+  };
+
+  document.getElementById("status").textContent = "Отправка...";
+
+  try {
+    const res = await fetch(API_URL + "/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    document.getElementById("status").textContent =
+      "Готово!\nОтвет сервера:\n" + JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById("status").textContent =
+      "Ошибка отправки:\n" + e;
+  }
+}
+</script>
+
+</body>
+</html>
