@@ -6,42 +6,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Экзамен — тест</title>
   <style>
-    :root { color-scheme: light; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 920px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin: 0 0 6px; }
-    .muted { color: #666; margin: 0 0 18px; }
     .card { border: 1px solid #e6e6e6; border-radius: 14px; padding: 16px; margin: 12px 0; background: #fff; }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    label { cursor: pointer; }
+    .muted { color:#666; }
     input[type="text"] { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; width: 320px; max-width: 100%; }
-    .q-title { margin: 0 0 10px; font-weight: 700; }
-    .opt { display: block; padding: 10px 12px; border: 1px solid #eee; border-radius: 12px; margin: 8px 0; }
-    .opt:hover { border-color: #d5d5d5; }
+    .q-title { font-weight: 700; margin: 0 0 10px; }
+    .opt { display: block; padding: 10px 12px; border: 1px solid #eee; border-radius: 12px; margin: 8px 0; cursor: pointer; }
+    .opt:hover { border-color:#d5d5d5; }
     .actions { position: sticky; bottom: 0; background: rgba(255,255,255,0.92); backdrop-filter: blur(6px); border-top: 1px solid #eee; padding: 12px 0; margin-top: 18px; }
     .actions-inner { max-width: 920px; margin: 0 auto; padding: 0 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-    button { padding: 11px 16px; border-radius: 12px; border: 1px solid #ddd; background: #f7f7f7; cursor: pointer; font-weight: 700; }
-    button.primary { background: #111; color: #fff; border-color: #111; }
+    button { padding: 11px 16px; border-radius: 12px; border: 1px solid #111; background: #111; color:#fff; cursor: pointer; font-weight: 800; }
     button:disabled { opacity: .55; cursor: not-allowed; }
     .status { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; margin-top: 10px; }
-    .bad { color: #b00020; }
-    .good { color: #0a7a2f; }
-    .counter { color:#444; font-size: 14px; }
-    .warn { color:#b00020; font-weight: 700; }
+    .bad { color:#b00020; }
+    .good { color:#0a7a2f; }
   </style>
 </head>
 <body>
 
   <h1>Экзаменационный тест</h1>
-  <p class="muted">
-    Вопросы выбираются случайно при открытии. Все вопросы обязательны. Отправка — один раз.
-  </p>
+  <p class="muted">Вопросы и варианты перемешиваются на сервере. Правильных ответов в коде страницы нет.</p>
 
   <div class="card">
-    <div class="row">
-      <label for="name"><strong>ФИО / Ник:</strong></label>
-      <input id="name" type="text" placeholder="Например, Иванов И.И." autocomplete="name" />
-      <span class="counter" id="progress">Ответов: 0/10</span>
-    </div>
+    <label><strong>ФИО / Ник:</strong></label><br/>
+    <input id="name" type="text" placeholder="Например, Иванов И.И." />
     <div class="status" id="status"></div>
   </div>
 
@@ -49,303 +37,132 @@
 
   <div class="actions">
     <div class="actions-inner">
-      <div class="counter" id="bottomHint">Ответов: 0/10</div>
-      <button class="primary" id="submitBtn">Отправить</button>
+      <div id="progress" class="muted">Ответов: 0/10</div>
+      <button id="submitBtn" disabled>Отправить</button>
     </div>
   </div>
 
 <script>
-/** =========================
- *  НАСТРОЙКИ
- *  ========================= */
-const API_URL = "https://quiz-api-krqu.onrender.com"; // <-- твой API
-const PICK_COUNT = 10;
+const API_URL = "https://quiz-api-krqu.onrender.com";
 
-// Ключ блокировки "один раз"
-// (на одном устройстве/в одном браузере; для “железно один раз” нужна серверная проверка)
-const SUBMIT_LOCK_KEY = "exam_submitted_v1";
+// ограничение "раз в сутки" в этом браузере (можешь убрать)
+const SUBMIT_TS_KEY = "exam_last_submit_ts_v1";
+const COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
-/** =========================
- *  БАНК ВОПРОСОВ (можешь расширять)
- *  correctIndex: 0=A, 1=B, 2=C, 3=D
- *  ========================= */
-const questionBank = [
-  { id: 1, text: "Какова ключевая идея АСМО-СМК как системы?", options: [
-    "Автоматизация документооборота",
-    "Контроль выполнения регламентов",
-    "Создание единого контура управления качеством",
-    "Замена ручного управления процессами"
-  ], correctIndex: 2 },
+let examId = null;
+let questions = [];
 
-  { id: 2, text: "Какой вопрос бизнеса напрямую закрывает модуль «Цели»?", options: [
-    "Как выявить несоответствия?",
-    "Как предотвратить инциденты?",
-    "Зачем выполняется эта деятельность?",
-    "Как измерить эффективность процессов?"
-  ], correctIndex: 2 },
-
-  { id: 3, text: "В чём принципиальное отличие KPI от целей в логике системы?", options: [
-    "KPI используются только для отчётности",
-    "Цели не связаны с процессами",
-    "Цели задают направление, а KPI позволяют измерить движение к ним",
-    "KPI применяются только в аудите"
-  ], correctIndex: 2 },
-
-  { id: 4, text: "Почему KPI в АСМО-СМК анализируются по процессам, подразделениям и периодам?", options: [
-    "Для удобства выгрузки отчётов",
-    "Чтобы заменить аудит",
-    "Чтобы видеть динамику процессов в разных разрезах",
-    "Из-за ограничений платформы"
-  ], correctIndex: 2 },
-
-  { id: 5, text: "Какую роль играют инциденты в общем контуре СМК?", options: [
-    "Используются только для статистики",
-    "Заменяют собой риски",
-    "Фиксируют факты реализации рисков и служат основой для анализа причин",
-    "Являются результатом внутренних аудитов"
-  ], correctIndex: 2 },
-
-  { id: 6, text: "Какой функционал отвечает за работу с причинами, а не только с последствиями проблем?", options: [
-    "Последствия",
-    "Инциденты",
-    "Чек-листы",
-    "Коррекция и корректирующие действия"
-  ], correctIndex: 3 },
-
-  { id: 7, text: "Почему в АСМО-СМК риски рассматриваются не только как угрозы?", options: [
-    "Так проще вести реестр рисков",
-    "Это снижает количество инцидентов",
-    "Это соответствует современному риск-ориентированному подходу",
-    "Это требование модуля KPI"
-  ], correctIndex: 2 },
-
-  { id: 8, text: "Почему индикаторы риска считаются «ранними сигналами»?", options: [
-    "Они фиксируют уже произошедшие события",
-    "Они используются после аудита",
-    "Они помогают отслеживать отклонения до наступления инцидентов",
-    "Они формируются только вручную"
-  ], correctIndex: 2 },
-
-  { id: 9, text: "Как внутренний аудит встроен в общий контур управления качеством?", options: [
-    "Проводится изолированно от других модулей",
-    "Используется только для сертификации по ISO 9001",
-    "Используется для контроля деятельности подразделений предприятия",
-    "Заменяет контроль KPI"
-  ], correctIndex: 2 },
-
-  { id: 10, text: "Какую ценность даёт фиксация положительных практик в аудитах?", options: [
-    "Увеличивает объём отчётности",
-    "Используется только для обучения сотрудников предприятия",
-    "Формирует базу лучших практик и поддерживает культуру улучшений",
-    "Заменяет корректирующие действия"
-  ], correctIndex: 2 },
-
-  { id: 11, text: "Почему АСМО-СМК нельзя рассматривать только как систему аудита?", options: [
-    "В ней нет чек-листов",
-    "Аудит является вспомогательной функцией",
-    "Аудит — лишь один из элементов единого контура целей, KPI, рисков",
-    "Она предназначена только для управления рисками"
-  ], correctIndex: 2 },
-
-  { id: 12, text: "Что является результатом корректно выстроенной цепочки: цели → KPI → риски → аудиты → улучшения?", options: [
-    "Увеличение количества отчётов",
-    "Формальное соответствие стандартам качества",
-    "Снижение инцидентов и появление управляемой картины качества",
-    "Рост числа показателей"
-  ], correctIndex: 2 },
-
-  { id: 13, text: "В каком случае АСМО-СМК особенно эффективно для холдингов и госкорпораций?", options: [
-    "Когда требуется только документооборот",
-    "При отсутствии филиалов",
-    "Когда необходимо консолидировать цели, KPI, риски и аудиты по группе компаний",
-    "Только при наличии других решений на платформе АСМО"
-  ], correctIndex: 2 },
-
-  { id: 14, text: "Какую управленческую ошибку помогает избежать единый контур АСМО-СМК?", options: [
-    "Избыточную автоматизацию",
-    "Дублирование ролей пользователей",
-    "Разрозненное управление целями, kpi, рисками и аудитами",
-    "Использование разных ИТ-платформ"
-  ], correctIndex: 2 },
-
-  { id: 15, text: "Почему в АСМО-СМК важно связывать инциденты с рисками?", options: [
-    "Чтобы автоматически формировать корректирующие действия без участия пользователей",
-    "Чтобы использовать данные по инцидентам для отчётности",
-    "Чтобы понимать, какие риски реально реализуются и требуют пересмотра",
-    "Чтобы использовать инциденты как показатели эффективности процессов"
-  ], correctIndex: 2 },
-
-  { id: 16, text: "Если аудит выявил несоответствие, но корректирующие действия не заданы, что это означает?", options: [
-    "Процесс завершён",
-    "Несоответствие автоматически устранено",
-    "Контур управления разорван, улучшения не закреплены",
-    "KPI будут пересчитаны"
-  ], correctIndex: 2 },
-
-  { id: 17, text: "Почему система АСМО-СМК считается «управляемым контуром», а не просто набором модулей?", options: [
-    "Потому что все модули продаются вместе",
-    "Потому что используется одна платформа",
-    "Потому что данные и действия логически связаны от целей до улучшений",
-    "Потому что есть дашборды и диаграммы с аналитикой"
-  ], correctIndex: 2 },
-
-  { id: 18, text: "Какой итоговый управленческий результат привносит АСМО-СМК?", options: [
-    "Рост числа проверок",
-    "Формальное соответствие стандартам",
-    "Повышение прозрачности, управляемости и устойчивости процессов",
-    "Замена управленческих решений системой"
-  ], correctIndex: 2 },
-
-  { id: 19, text: "Какие решения отнесены к основным отечественным конкурентам АСМО-СМК?", options: [
-    "SAP GRC, ARIS, Oracle Risk Management",
-    "Directum, DocsVision, ELMA",
-    "АВАКОР, Business Studio, 1С-КПД:СМК",
-    "Naumen, 1Клик: Риск PRO (1С), Контур-Фокус"
-  ], correctIndex: 2 },
-
-  { id: 20, text: "Какой общий фокус характерен для решения АВАКОР?", options: [
-    "Управление документооборотом и маршрутами согласования",
-    "Моделирование бизнес-процессов и регламентов",
-    "Внутренний аудит, внутренний контроль и управление рисками",
-    "KPI-аналитика и стратегическое управление"
-  ], correctIndex: 2 },
-
-  { id: 21, text: "В чём ключевая особенность решения 1С-КПД:СМК?", options: [
-    "Полноценное управление операционными рисками",
-    "Гибкая система расчёта KPI",
-    "Фокус на документообороте и процессах СМК в экосистеме 1С",
-    "Развитые интерактивные панели управления"
-  ], correctIndex: 2 },
-
-  { id: 22, text: "Почему АСМО-СМК выигрывает у конкурентов в части управленческой аналитики?", options: [
-    "За счёт фиксированных методик расчётов",
-    "За счёт упрощённой модели данных",
-    "За счёт гибкой настройки расчёта KPI и учёта лучших практик",
-    "За счёт меньшего числа модулей"
-  ], correctIndex: 2 },
-];
-
-/** =========================
- *  СЛУЧАЙНЫЙ ВЫБОР 10 (без повторов)
- *  ========================= */
-function pickRandomUnique(bank, count) {
-  const arr = [...bank];
-  // Fisher-Yates shuffle
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr.slice(0, Math.min(count, arr.length));
-}
-
-let selected = pickRandomUnique(questionBank, PICK_COUNT);
-
-/** =========================
- *  РЕНДЕР
- *  ========================= */
-function renderQuiz() {
-  const quiz = document.getElementById("quiz");
-  quiz.innerHTML = "";
-
-  selected.forEach((q, i) => {
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const title = document.createElement("div");
-    title.className = "q-title";
-    title.textContent = `${i + 1}. ${q.text}`;
-    card.appendChild(title);
-
-    q.options.forEach((opt, oi) => {
-      const optId = `q${q.id}_o${oi}`;
-      const wrap = document.createElement("label");
-      wrap.className = "opt";
-      wrap.htmlFor = optId;
-      wrap.innerHTML = `
-        <input id="${optId}" type="radio" name="q_${q.id}" value="${oi}" />
-        <span style="margin-left:8px;">${opt}</span>
-      `;
-      card.appendChild(wrap);
-    });
-
-    quiz.appendChild(card);
-  });
-}
-
-/** =========================
- *  ПРОГРЕСС / ВАЛИДАЦИЯ
- *  ========================= */
-function getAnsweredCount() {
-  let answered = 0;
-  for (const q of selected) {
-    const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    if (checked) answered++;
-  }
-  return answered;
-}
-
-function updateProgress() {
-  const answered = getAnsweredCount();
-  const total = selected.length;
-  const text = `Ответов: ${answered}/${total}`;
-  document.getElementById("progress").textContent = text;
-  document.getElementById("bottomHint").textContent = text;
-
-  const btn = document.getElementById("submitBtn");
-  const locked = localStorage.getItem(SUBMIT_LOCK_KEY) === "1";
-  if (locked) {
-    btn.disabled = true;
-    document.getElementById("bottomHint").innerHTML = `Отправлено <span class="warn">1 раз</span>. Повторная отправка заблокирована.`;
-  } else {
-    btn.disabled = answered !== total;
-  }
-}
-
-document.addEventListener("change", (e) => {
-  if (e.target && e.target.matches('input[type="radio"]')) {
-    updateProgress();
-  }
-});
-
-/** =========================
- *  СБОР ОТВЕТОВ / СЧЁТ
- *  ========================= */
-function collectAnswersAll() {
-  const answers = {};
-  for (const q of selected) {
-    const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
-    if (!checked) return null; // обязательность
-    const chosenIndex = Number(checked.value);
-    answers[String(q.id)] = {
-      chosenIndex,
-      chosenText: q.options[chosenIndex],
-    };
-  }
-  return answers;
-}
-
-function computeScore(answersObj) {
-  let score = 0;
-  for (const q of selected) {
-    const a = answersObj[String(q.id)];
-    if (a && a.chosenIndex === q.correctIndex) score++;
-  }
-  return score;
-}
-
-/** =========================
- *  ОТПРАВКА (один раз)
- *  ========================= */
 function setStatus(text, kind) {
   const el = document.getElementById("status");
   el.textContent = text || "";
   el.className = "status " + (kind || "");
 }
 
+function getLastSubmitTs() {
+  const v = localStorage.getItem(SUBMIT_TS_KEY);
+  return v ? Number(v) : 0;
+}
+function canSubmitNow() {
+  const last = getLastSubmitTs();
+  if (!last) return { ok: true, leftMs: 0 };
+  const leftMs = (last + COOLDOWN_MS) - Date.now();
+  return { ok: leftMs <= 0, leftMs: Math.max(0, leftMs) };
+}
+function formatLeft(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${h}ч ${m}м ${s}с`;
+}
+
+function render() {
+  const quiz = document.getElementById("quiz");
+  quiz.innerHTML = "";
+
+  questions.forEach((q, i) => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `<div class="q-title">${i+1}. ${q.text}</div>`;
+
+    q.options.forEach((opt, oi) => {
+      const optId = `q${q.id}_o${opt.id}`;
+      const label = document.createElement("label");
+      label.className = "opt";
+      label.htmlFor = optId;
+      label.innerHTML = `
+        <input id="${optId}" type="radio" name="q_${q.id}" value="${opt.id}">
+        <span style="margin-left:8px;">${opt.text}</span>
+      `;
+      card.appendChild(label);
+    });
+
+    quiz.appendChild(card);
+  });
+
+  updateProgress();
+}
+
+function getAnsweredCount() {
+  let c = 0;
+  for (const q of questions) {
+    const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
+    if (checked) c++;
+  }
+  return c;
+}
+
+function updateProgress() {
+  const answered = getAnsweredCount();
+  const total = questions.length;
+  document.getElementById("progress").textContent = `Ответов: ${answered}/${total}`;
+
+  const gate = canSubmitNow();
+  const btn = document.getElementById("submitBtn");
+
+  if (!gate.ok) {
+    btn.disabled = true;
+    setStatus(`Повторная отправка доступна через: ${formatLeft(gate.leftMs)}`, "bad");
+    return;
+  }
+
+  // все обязательны
+  btn.disabled = answered !== total;
+}
+
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.matches('input[type="radio"]')) updateProgress();
+});
+
+function collectAnswersRequired() {
+  const answers = {};
+  for (const q of questions) {
+    const checked = document.querySelector(`input[name="q_${q.id}"]:checked`);
+    if (!checked) return null;
+    answers[String(q.id)] = Number(checked.value); // option_id
+  }
+  return answers;
+}
+
+async function loadExam() {
+  setStatus("Загрузка вопросов...", "");
+  const res = await fetch(API_URL + "/exam");
+  const data = await res.json();
+  if (!res.ok) {
+    setStatus("Ошибка загрузки:\n" + JSON.stringify(data, null, 2), "bad");
+    return;
+  }
+  examId = data.exam_id;
+  questions = data.questions;
+  setStatus("", "");
+  render();
+}
+
 async function submit() {
-  const locked = localStorage.getItem(SUBMIT_LOCK_KEY) === "1";
-  if (locked) {
-    setStatus("Уже отправлено. Повторная отправка заблокирована.", "bad");
+  const gate = canSubmitNow();
+  if (!gate.ok) {
+    setStatus(`Повторная отправка доступна через: ${formatLeft(gate.leftMs)}`, "bad");
     return;
   }
 
@@ -355,24 +172,13 @@ async function submit() {
     return;
   }
 
-  const answers = collectAnswersAll();
+  const answers = collectAnswersRequired();
   if (!answers) {
-    setStatus("Ответьте на все вопросы — только после этого можно отправить.", "bad");
-    updateProgress();
+    setStatus("Ответьте на все вопросы.", "bad");
     return;
   }
 
-  const score = computeScore(answers);
-  const questionIds = selected.map(q => q.id);
-
-  const payload = {
-    name,
-    score,
-    answers: {
-      questionIds,
-      answers
-    }
-  };
+  const payload = { name, exam_id: examId, answers };
 
   setStatus("Отправка...", "");
   const btn = document.getElementById("submitBtn");
@@ -381,10 +187,9 @@ async function submit() {
   try {
     const res = await fetch(API_URL + "/submit", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type":"application/json"},
       body: JSON.stringify(payload)
     });
-
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setStatus("Ошибка сервера:\n" + JSON.stringify(data, null, 2), "bad");
@@ -392,13 +197,12 @@ async function submit() {
       return;
     }
 
-    // ✅ блокируем повторную отправку
-    localStorage.setItem(SUBMIT_LOCK_KEY, "1");
+    // блокируем на сутки (локально)
+    localStorage.setItem(SUBMIT_TS_KEY, String(Date.now()));
 
-    setStatus(`✅ Отправлено!\nВаш результат: ${score}/${selected.length}`, "good");
-    updateProgress();
+    setStatus(`✅ Отправлено!\nРезультат: ${data.score}/${questions.length}`, "good");
 
-    // Дополнительно: заблокируем изменение ответов после успешной отправки
+    // блокируем изменения после отправки
     document.querySelectorAll('input[type="radio"], input[type="text"]').forEach(el => el.disabled = true);
 
   } catch (e) {
@@ -409,17 +213,7 @@ async function submit() {
 
 document.getElementById("submitBtn").addEventListener("click", submit);
 
-/** =========================
- *  START
- *  ========================= */
-renderQuiz();
-updateProgress();
-
-// Если уже отправлено ранее — сразу блокируем
-if (localStorage.getItem(SUBMIT_LOCK_KEY) === "1") {
-  setStatus("Тест уже был отправлен с этого устройства/браузера. Повторная отправка заблокирована.", "bad");
-  document.querySelectorAll('input[type="radio"]').forEach(el => el.disabled = true);
-}
+loadExam();
 </script>
 </body>
 </html>
