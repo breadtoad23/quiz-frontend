@@ -25,10 +25,10 @@
 <body>
 
   <h1>Экзаменационный тест</h1>
-  <p class="muted">Вопросы и варианты перемешиваются на сервере. Правильных ответов в коде страницы нет.</p>
+  
 
   <div class="card">
-    <label><strong>ФИО / Ник:</strong></label><br/>
+    <label><strong>ФИО:</strong></label><br/>
     <input id="name" type="text" placeholder="Например, Иванов И.И." />
     <div class="status" id="status"></div>
   </div>
@@ -41,9 +41,24 @@
       <button id="submitBtn" disabled>Отправить</button>
     </div>
   </div>
+<div id="memeBox" class="card" style="display:none;">
+  <div id="memeText" style="font-weight:700; margin-bottom:10px;"></div>
+  <img id="memeImg" alt="meme" style="max-width:100%; border-radius:14px; border:1px solid #eee;">
+</div>
 
 <script>
 const API_URL = "https://quiz-api-krqu.onrender.com";
+const MEMES = [
+  { min: 0,  max: 3,  img: "https://img01.rl0.ru/afisha/e750x-i/daily.afisha.ru/uploads/images/b/25/b2586f8eb5561542e587aded807478e8.jpg",  text: "беда..беда" },
+  { min: 4,  max: 7,  img: "https://i.pinimg.com/236x/19/b9/86/19b98673e7fdbc6955fc31e1fa7edc74.jpg",    text: "Ну, ладно" },
+  { min: 8,  max: 10, img: "https://www.meme-arsenal.com/memes/8c1c72ad4433bbd78c8d3189ee070767.jpg",   text: "Удивительно" },
+];
+
+function pickMeme(score, total) {
+  // если вдруг total не 10, можно ориентироваться на проценты:
+  // const pct = Math.round((score / total) * 100);
+  return MEMES.find(m => score >= m.min && score <= m.max) || null;
+}
 
 // ограничение "раз в сутки" в этом браузере (можешь убрать)
 const SUBMIT_TS_KEY = "exam_last_submit_ts_v1";
@@ -201,6 +216,14 @@ async function submit() {
     localStorage.setItem(SUBMIT_TS_KEY, String(Date.now()));
 
     setStatus(`✅ Отправлено!\nРезультат: ${data.score}/${questions.length}`, "good");
+    
+const meme = pickMeme(data.score, questions.length);
+if (meme) {
+  const box = document.getElementById("memeBox");
+  document.getElementById("memeText").textContent = `${meme.text} (${data.score}/${questions.length})`;
+  document.getElementById("memeImg").src = meme.img;
+  box.style.display = "block";
+}
 
     // блокируем изменения после отправки
     document.querySelectorAll('input[type="radio"], input[type="text"]').forEach(el => el.disabled = true);
@@ -217,3 +240,4 @@ loadExam();
 </script>
 </body>
 </html>
+
